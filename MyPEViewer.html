@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Document</title>
+<link rel="stylesheet" href="https://cdn.bootcss.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+</head>
+<style type="text/css">
+    #fileImport{
+        position: absolute;
+        bottom: 20px;
+        width: 100px;
+        left:50%;
+        margin-left:-50px;
+    }
+    #major-body{
+        position: fixed;
+        width: 800px;
+        min-height:500px;
+        top:50%;
+        left:50%;
+        margin-top: -220px;
+        margin-left:-400px;
+        padding: 20px 100px 20px 100px;
+        border: 2px solid #333333;
+        border-radius: 20px;
+    }
+    #major-body td{
+        vertical-align: middle;
+        text-align: center;  
+    }
+    #PE-table{
+        display: none;
+    }
+    #PE-cnt{
+        height:400px;
+        overflow: auto;
+    }
+    #RAW_calculator{
+        display: none;
+    }
+</style>
+<body>
+    
+        <div id="major-body">
+            <div>
+                <input type="file" id="files" style="display: none" onchange="fileImport()">
+                <div id="PE-cnt">
+                    <table class="table table-striped" id="PE-table">
+                        <thead>
+                            <th>PE-STRUCT</th><th>PE-KEY</th><th>PE-VALUE</th>
+                        </thead>
+                        <tbody id="PE_TABLE_BODY">
+                            
+                        </tbody>
+                    </table>
+                    <h1 style="margin-top:200px">Please choose an exe!</h1>
+                </div>
+                <table>
+                    <tr>
+                    <input type="button" class="btn btn-success" id="fileImport" value="import file">
+                    </tr>
+                </table>
+            </div>
+        </div>
+                <form class="form-inline" id="RAW_calculator">
+                  <div class="form-group">
+                    <label for="inputRVA">RVA</label>
+                    <input type="text" class="form-control" id="inputRVA">
+                  </div>
+                  <div class="form-group">
+                    <label for="inputRAW">RAW</label>
+                    <input type="text" class="form-control" id="inputRAW" readonly="readonly">
+                  </div>
+                  <input id="RVA_RAW" class="btn btn-default" type="button" value="GO">
+                </form>
+
+    <script src="http://code.jquery.com/jquery-1.12.4.js"></script>
+    <script>
+        var IMAGE_DOS_HEADER_SIZE=64;
+        var PE_SIGN_SIZE=4;
+        var IMAGE_FILE_HEADER_SIZE=20;
+        var OPTIONAL_HEADER32_SIZE=224;
+        var NT_TOTAL_SIZE=248;// PE_SIGN_SIZE+IMAGE_FILE_HEADER_SIZE+OPTIONAL_HEADER32_SIZE
+        var IMAGE_SECTION_SIZE=40;
+        pointerToRawData=new Array();
+        virtualAddress=new Array();
+        ImageBase=1;
+        goTimes=0;
+        $("#fileImport").click(function () {
+            $("#files").click();
+        });
+
+        $("#RVA_RAW").click(function(){
+            console.log(pointerToRawData);
+            console.log(virtualAddress);
+            if(goTimes==0){
+                for(var i=0;i<3;i++){
+                    pointerToRawData[i]=parseInt(pointerToRawData[i],16);
+                    virtualAddress[i]=parseInt(virtualAddress[i],16);
+                }
+                goTimes++;
+            }
+            console.log(pointerToRawData);
+            console.log(virtualAddress);
+            // RAW=RVA-virtualAddress+pointerToRawData
+            var RVA = parseInt(document.getElementById('inputRVA').value,16);
+            var section_ordinal=-1;
+            for(var i=0;i<3;i++){
+                if(RVA>virtualAddress[i]){
+                    section_ordinal++;
+                }
+            }
+            if(section_ordinal<0){
+                alert("Wrong RVA!");
+            }else{
+                var RAW=RVA-virtualAddress[section_ordinal]+pointerToRawData[section_ordinal];
+                RAW=RAW.toString(16);
+                $("#inputRAW").val(RAW);
+            }
+        });
+
+        function fileImport() {
+            var selectedFile = document.getElementById('files').files[0];
+            var name = selectedFile.name;
+            var size = selectedFile.size;
+            $("#PE-cnt h1").hide();
+            $("#PE-table").show();
+            $("#RAW_calculator").show();
+
+            var reader = new FileReader();
+            reader.readAsBinaryString(selectedFile);
+            reader.onload = function () {
+                var PE_HEARDER=new Array();
+                var fileByteArr=hexToString(this.result).split(",");
+                var image_dos_header=analyze_image_dos_header(fileByteArr,IMAGE_DOS_HEADER_SIZE);
+                PE_HEARDER.push(image_dos_header);
+                var dos_total_size=parseInt(image_dos_header.e_lfanew,16);
+                fileByteArr=fileByteArr.splice(dos_total_size);
+
+                var image_nt_header=analyze_image_NT_header(fileByteArr,NT_TOTAL_SIZE);
+                var image_file_header=image_nt_header.image_file_header;
+                var optional_header32=image_nt_header.optional_header32;
+
+                PE_HEARDER.push(image_nt_header);
+
+                fileByteArr=fileByteArr.splice(NT_TOTAL_SIZE);
+                var sections=new Array();
+                var text_section=analyze_image_section_header(fileByteArr,IMAGE_SECTION_SIZE);
+                fileByteArr=fileByteArr.splice(IMAGE_SECTION_SIZE);
+                var data_section=analyze_image_section_header(fileByteArr,IMAGE_SECTION_SIZE);
+                fileByteArr=fileByteArr.splice(IMAGE_SECTION_SIZE);
+                var rsrc_section=analyze_image_section_header(fileByteArr,IMAGE_SECTION_SIZE);
+                sections.push(text_section);
+                sections.push(data_section);
+                sections.push(rsrc_section);
+                PE_HEARDER.push(sections);
+
+                $("PE-table").empty();
+                // Generate Image_dos_header
+                var $trTemp = $("<tr></tr>");
+                $trTemp.append("<td rowspan='2'>image_dos_header</h3></td>");
+                $trTemp.append("<td>DOS Signature</td>");
+                $trTemp.append("<td>"+ image_dos_header.e_magic +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>NT_OFFSET</td>");
+                $trTemp.append("<td>"+ image_dos_header.e_lfanew +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                // Generate PE Signature
+                var $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>image_nt_header</h3></td>");
+                $trTemp.append("<td>PE Signature</td>");
+                $trTemp.append("<td>"+ image_nt_header.peSign +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+                // Generate Image_File_Header
+                var $trTemp = $("<tr></tr>");
+                $trTemp.append("<td rowspan='7'>image_file_header</h3></td>");
+                $trTemp.append("<td>Machine</td>");
+                $trTemp.append("<td>"+ image_file_header.Machine +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>NumberOfSections</td>");
+                $trTemp.append("<td>"+ image_file_header.NumberOfSections +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>TimeDateStamp</td>");
+                $trTemp.append("<td>"+ image_file_header.TimeDateStamp +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>PointerToSymbolTable</td>");
+                $trTemp.append("<td>"+ image_file_header.PointerToSymbolTable +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>NumberOfSymbols</td>");
+                $trTemp.append("<td>"+ image_file_header.NumberOfSymbols +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>SizeOfOptionalHeader</td>");
+                $trTemp.append("<td>"+ image_file_header.SizeOfOptionalHeader +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>Charateristics</td>");
+                $trTemp.append("<td>"+ image_file_header.Charateristics +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                // Generate optional_header32
+                var $trTemp = $("<tr></tr>");
+                $trTemp.append("<td rowspan='16'>optional_header32</h3></td>");
+                $trTemp.append("<td>Magic</td>");
+                $trTemp.append("<td>"+ optional_header32.Magic +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>MajorLinkerVersion</td>");
+                $trTemp.append("<td>"+ optional_header32.MajorLinkerVersion +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>MinorLinkerVersion</td>");
+                $trTemp.append("<td>"+ optional_header32.MinorLinkerVersion +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>SizeOfCode</td>");
+                $trTemp.append("<td>"+ optional_header32.SizeOfCode +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>SizeOfInitializedData</td>");
+                $trTemp.append("<td>"+ optional_header32.SizeOfInitializedData +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>SizeOfUnitializedData</td>");
+                $trTemp.append("<td>"+ optional_header32.SizeOfUnitializedData +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>AddressOfEntryPoint</td>");
+                $trTemp.append("<td>"+ optional_header32.AddressOfEntryPoint +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>BaseOfCode</td>");
+                $trTemp.append("<td>"+ optional_header32.BaseOfCode +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>BaseOfData</td>");
+                $trTemp.append("<td>"+ optional_header32.BaseOfData +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>ImageBase</td>");
+                $trTemp.append("<td>"+ optional_header32.ImageBase +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>SectionAlignment</td>");
+                $trTemp.append("<td>"+ optional_header32.SectionAlignment +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>FileAlignment</td>");
+                $trTemp.append("<td>"+ optional_header32.FileAlignment +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>SizeOfImage</td>");
+                $trTemp.append("<td>"+ optional_header32.SizeOfImage +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>SizeOfHeaders</td>");
+                $trTemp.append("<td>"+ optional_header32.SizeOfHeaders +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>SubSystem</td>");
+                $trTemp.append("<td>"+ optional_header32.SubSystem +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>NumberRvaAndSizes</td>");
+                $trTemp.append("<td>"+ optional_header32.NumberRvaAndSizes +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                var dicArr=optional_header32.dicArr;
+                for(var i=1;i<=16;i++){
+                    var $trTemp = $("<tr></tr>");
+                    $trTemp.append("<td rowspan='2'>"+dicArr[i].name+"</h3></td>");
+                    $trTemp.append("<td>virtualAddress</td>");
+                    $trTemp.append("<td>"+ dicArr[i].RVA_of_dic +"</td>");
+                    $trTemp.appendTo("#PE_TABLE_BODY");
+
+                    $trTemp = $("<tr></tr>");
+                    $trTemp.append("<td>Size</td>");
+                    $trTemp.append("<td>"+ dicArr[i].size +"</td>");
+                    $trTemp.appendTo("#PE_TABLE_BODY");
+                }
+                // Generate sections
+                var $trTemp = $("<tr></tr>");
+                $trTemp.append("<td rowspan='5'>text_section</h3></td>");
+                $trTemp.append("<td>virtualSize</td>");
+                $trTemp.append("<td>"+sections[0].virtualSize+"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>virtualAddress</td>");
+                $trTemp.append("<td>"+ sections[0].virtualAddress +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>sizeOfRawData</td>");
+                $trTemp.append("<td>"+ sections[0].sizeOfRawData +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>pointerToRawData</td>");
+                $trTemp.append("<td>"+ sections[0].pointerToRawData +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>charateristics</td>");
+                $trTemp.append("<td>"+ sections[0].charateristics.join("<br>") +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                var $trTemp = $("<tr></tr>");
+                $trTemp.append("<td rowspan='5'>data_section</h3></td>");
+                $trTemp.append("<td>virtualSize</td>");
+                $trTemp.append("<td>"+sections[1].virtualSize+"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>virtualAddress</td>");
+                $trTemp.append("<td>"+ sections[1].virtualAddress +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>sizeOfRawData</td>");
+                $trTemp.append("<td>"+ sections[1].sizeOfRawData +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>pointerToRawData</td>");
+                $trTemp.append("<td>"+ sections[1].pointerToRawData +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>charateristics</td>");
+                $trTemp.append("<td>"+ sections[1].charateristics.join("<br>") +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                var $trTemp = $("<tr></tr>");
+                $trTemp.append("<td rowspan='5'>rsrc_section</h3></td>");
+                $trTemp.append("<td>virtualSize</td>");
+                $trTemp.append("<td>"+sections[2].virtualSize+"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>virtualAddress</td>");
+                $trTemp.append("<td>"+ sections[2].virtualAddress +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>sizeOfRawData</td>");
+                $trTemp.append("<td>"+ sections[2].sizeOfRawData +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>pointerToRawData</td>");
+                $trTemp.append("<td>"+ sections[2].pointerToRawData +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+
+                $trTemp = $("<tr></tr>");
+                $trTemp.append("<td>charateristics</td>");
+                $trTemp.append("<td>"+ sections[2].charateristics.join("<br>") +"</td>");
+                $trTemp.appendTo("#PE_TABLE_BODY");
+            }
+        }
+
+        function hexToString(str){
+            var rst="";
+            for(var i=0;i<str.length;i++){
+                var temp=str.charCodeAt(i).toString(16);
+                if(parseInt(temp,16)<16){
+                    temp="0"+temp;
+                }
+                if(rst =="")
+                    rst=temp;
+                else
+                    rst+=","+temp;
+            }
+            return rst;
+        }
+
+
+        function analyze_image_dos_header(strArr,length){
+            var struct_value=strArr.slice(0,length);
+            image_dos_header=new Object();
+            image_dos_header.e_magic=strArr.slice(0,2).join('');//DOS signature
+            image_dos_header.e_lfanew=strArr.slice(length-4,length).reverse().join(''); // offset to NT header
+            return image_dos_header;
+        }
+
+        function analyze_image_NT_header(strArr,length){
+            var struct_value=strArr.slice(0,length);
+            image_nt_header=new Object();
+            image_nt_header.peSign=struct_value.slice(0,4).join('');
+            image_file_header_byte_arr=struct_value.slice(4,24);
+            image_nt_header.image_file_header=analyze_image_file_header(image_file_header_byte_arr,IMAGE_FILE_HEADER_SIZE);
+            optional_header32_byte_arr=struct_value.slice(24,length);
+            image_nt_header.optional_header32=analyze_optional_header(optional_header32_byte_arr,length-24);
+            return image_nt_header;
+        }
+
+        function analyze_image_file_header(image_file_header_byte_arr,length){
+            image_file_header=new Object();
+            image_file_header.Machine=image_file_header_byte_arr.slice(0,2).reverse().join('');//CPU to run this exe,more detail in Microsoft Platform SDK-winnt.h
+            image_file_header.NumberOfSections=image_file_header_byte_arr.slice(2,4).reverse().join('');
+            image_file_header.TimeDateStamp=image_file_header_byte_arr.slice(4,8).reverse().join('');
+            image_file_header.PointerToSymbolTable=image_file_header_byte_arr.slice(8,12).join('');
+            image_file_header.NumberOfSymbols=image_file_header_byte_arr.slice(12,16).reverse().join('');
+            image_file_header.SizeOfOptionalHeader=image_file_header_byte_arr.slice(16,18).reverse().join('');
+            image_file_header.Charateristics=image_file_header_byte_arr.slice(18,20).reverse().join('');//Charateristics are to indecate the whether a file is executable or a dll file and more,more detail in Microsoft Platform SDK-winnt.h
+            return image_file_header;
+        }
+
+        function analyze_optional_header(optional_header32_byte_arr,length){
+            var dataDic=new Array();
+            dataDic[0]="export_directory";
+            dataDic[1]="import_directory";
+            dataDic[2]="resource_directory";
+            dataDic[3]="exception_directory";
+            dataDic[4]="security_directory";
+            dataDic[5]="baseReloc_directory";
+            dataDic[6]="debug_directory";
+            dataDic[7]="copyRight_directory";
+            dataDic[8]="globalPTR_direcory";
+            dataDic[9]="TLS_directory";
+            dataDic[10]="loadConfig_directory";
+            dataDic[11]="bound_import_directory";
+            dataDic[12]="IAT_directory";
+            dataDic[13]="delay_import_directory";
+            dataDic[14]="com_descriptor_directory";
+            dataDic[15]="reserved_directory";
+
+            optional_header32=new Object();
+            optional_header32.Magic=optional_header32_byte_arr.slice(0,2).reverse().join('');
+            optional_header32.MajorLinkerVersion=optional_header32_byte_arr.slice(2,3).join('');
+            optional_header32.MinorLinkerVersion=optional_header32_byte_arr.slice(3,4).join('');
+            optional_header32.SizeOfCode=optional_header32_byte_arr.slice(4,8).reverse().join('');
+            optional_header32.SizeOfInitializedData=optional_header32_byte_arr.slice(8,12).reverse().join('');
+            optional_header32.SizeOfUnitializedData=optional_header32_byte_arr.slice(12,16).reverse().join('');
+            optional_header32.AddressOfEntryPoint=optional_header32_byte_arr.slice(16,20).reverse().join('');
+            optional_header32.BaseOfCode=optional_header32_byte_arr.slice(20,24).reverse().join('');
+            optional_header32.BaseOfData=optional_header32_byte_arr.slice(24,28).reverse().join('');
+            optional_header32.ImageBase=optional_header32_byte_arr.slice(28,32).reverse().join('');
+            ImageBase=optional_header32.ImageBase;
+
+            optional_header32.SectionAlignment=optional_header32_byte_arr.slice(32,36).reverse().join('');
+            optional_header32.FileAlignment=optional_header32_byte_arr.slice(36,40).reverse().join('');
+            optional_header32.SizeOfImage=optional_header32_byte_arr.slice(56,60).reverse().join('');
+            optional_header32.SizeOfHeaders=optional_header32_byte_arr.slice(60,64).reverse().join('');
+            var subSys_value=parseInt(optional_header32_byte_arr.slice(68,70).reverse().join(''),16);
+            switch(subSys_value){
+                case 1:
+                    optional_header32.SubSystem="Driver_File";
+                break;
+                case 2:
+                    optional_header32.SubSystem="GUI_File";
+                break;
+                case 3:
+                    optional_header32.SubSystem="CUI_File";
+                break;
+            }
+            optional_header32.NumberRvaAndSizes=optional_header32_byte_arr.slice(92,96).reverse().join('');
+            optional_header32.dicArr=new Array();
+            var dicNum=parseInt(optional_header32.NumberRvaAndSizes,16);
+            for(var i=1;i<=dicNum;i++){
+                optional_header32.dicArr[i]=new Object();
+                optional_header32.dicArr[i].name=dataDic[i-1];
+                optional_header32.dicArr[i].RVA_of_dic=optional_header32_byte_arr.slice(96+i*4-4,96+i*4-2).reverse().join('');
+                optional_header32.dicArr[i].size=optional_header32_byte_arr.slice(96+i*4-2,96+i*4).reverse().join('');
+            }
+            return optional_header32;
+        }
+
+        function analyze_image_section_header(image_section_header_byte_arr,length){
+            image_section_header=new Object();
+            image_section_header.name=image_section_header_byte_arr.slice(0,8).join('');
+            image_section_header.virtualSize=image_section_header_byte_arr.slice(8,12).reverse().join('');
+            image_section_header.virtualAddress=image_section_header_byte_arr.slice(12,16).reverse().join('');
+            virtualAddress.push(image_section_header.virtualAddress);
+            image_section_header.sizeOfRawData=image_section_header_byte_arr.slice(16,20).reverse().join('');
+
+            image_section_header.pointerToRawData=image_section_header_byte_arr.slice(20,24).reverse().join('');
+            pointerToRawData.push(image_section_header.pointerToRawData);
+            // image_section_header.charateristics=image_section_header_byte_arr.slice(36,length).reverse().join('');
+            var flags=image_section_header_byte_arr.slice(36,length).reverse().join('');
+
+            image_section_header.charateristics=new Array();
+            var wxr_flag=parseInt(flags.substring(0,1),16);
+            var section_flag=parseInt(flags.substring(6,7),16);
+            if(wxr_flag>=8){
+                image_section_header.charateristics.push("Section_Writable");
+                wxr_flag-=8;
+            }
+            if(wxr_flag>=4){
+                image_section_header.charateristics.push("Section_Readable");
+                wxr_flag-=4;
+            }if(wxr_flag>=2){
+                image_section_header.charateristics.push("Section_Executable");
+            }
+            if(section_flag>=8){
+                image_section_header.charateristics.push("Section_With_Uninitialized_Data");
+                section_flag-=8;
+            }
+            if(section_flag>=4){
+                image_section_header.charateristics.push("Section_With_initialized_Data");
+                section_flag-=4;
+            }
+            if(section_flag>=2){
+                 image_section_header.charateristics.push("Section_With_Code");
+            }
+            return image_section_header;
+        }
+    </script>
+</body>
+</html>
