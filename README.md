@@ -19,12 +19,6 @@ Just follow these steps:
 
 ​	1.Open the html file;
 
-![img](file:///C:\Users\Lenovo\AppData\Roaming\Tencent\Users\1063852476\QQ\WinTemp\RichOle\IIHU}VG5QQJ9[P@4U5M[%7K.png)
-
 ​	2.Chose an exe file you want to analyze.If the file is large it may cost respectively long time.
 
-![img](file:///C:\Users\Lenovo\AppData\Roaming\Tencent\Users\1063852476\QQ\WinTemp\RichOle\YQN53(24~5}TUL63~F)7CI3.png)
-
 ​	3.Input the RVA and click "GO" button to get RAW.
-
-![img](file:///C:\Users\Lenovo\AppData\Roaming\Tencent\Users\1063852476\QQ\WinTemp\RichOle\]J{`@]`NV59QCJI@ZMR$J_8.png)
