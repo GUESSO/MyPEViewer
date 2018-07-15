@@ -154,6 +154,7 @@
                 sections.push(text_section);
                 sections.push(data_section);
                 sections.push(rsrc_section);
+                console.log(sections);
                 PE_HEARDER.push(sections);
 
                 $("PE-table").empty();
@@ -489,8 +490,8 @@
             for(var i=1;i<=dicNum;i++){
                 optional_header32.dicArr[i]=new Object();
                 optional_header32.dicArr[i].name=dataDic[i-1];
-                optional_header32.dicArr[i].RVA_of_dic=optional_header32_byte_arr.slice(96+i*4-4,96+i*4-2).reverse().join('');
-                optional_header32.dicArr[i].size=optional_header32_byte_arr.slice(96+i*4-2,96+i*4).reverse().join('');
+                optional_header32.dicArr[i].RVA_of_dic=optional_header32_byte_arr.slice(96+i*8-8,96+i*8-4).reverse().join('');
+                optional_header32.dicArr[i].size=optional_header32_byte_arr.slice(96+i*8-4,96+i*8).reverse().join('');
             }
             return optional_header32;
         }
